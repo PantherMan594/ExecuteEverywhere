@@ -1,7 +1,11 @@
 package me.vemacs.executeeverywhere.bungee;
 
+import com.google.common.base.Joiner;
 import com.google.common.io.ByteStreams;
+import net.md_5.bungee.api.ChatColor;
+import net.md_5.bungee.api.CommandSender;
 import net.md_5.bungee.api.ProxyServer;
+import net.md_5.bungee.api.plugin.Command;
 import net.md_5.bungee.api.plugin.Listener;
 import net.md_5.bungee.api.plugin.Plugin;
 import net.md_5.bungee.config.Configuration;
@@ -13,14 +17,18 @@ import redis.clients.jedis.JedisPoolConfig;
 import redis.clients.jedis.JedisPubSub;
 
 import java.io.*;
+import java.util.concurrent.TimeUnit;
 
 public class ExecuteEverywhere extends Plugin implements Listener {
     private JedisPool pool;
+    private static final Joiner joiner = Joiner.on(" ");
+    private final String CHANNEL = "ee";
     private final String BUNGEE_CHANNEL = "eb";
+    private String SPECIFIC_CHANNEL = "";
     private static Plugin instance;
+    private EESubscriber eeSubscriber;
 
     Configuration config;
-    EESubscriber eeSubscriber;
 
     @Override
     public void onEnable() {
@@ -31,26 +39,32 @@ public class ExecuteEverywhere extends Plugin implements Listener {
         } catch (IOException e) {
             e.printStackTrace();
         }
+        getProxy().getPluginManager().registerCommand(this, new EECommand());
+        getProxy().getPluginManager().registerCommand(this, new EBCommand());
+        getProxy().getPluginManager().registerCommand(this, new ESCommand());
+        SPECIFIC_CHANNEL = "es_" + (config.getString("name").equals("") ? getProxy().getName() : config.getString("name"));
         final String ip = config.getString("ip");
         final int port = config.getInt("port");
         final String password = config.getString("password");
+        if (password == null || password.equals(""))
+            pool = new JedisPool(new JedisPoolConfig(), ip, port, 0);
+        else
+            pool = new JedisPool(new JedisPoolConfig(), ip, port, 0, password);
         getProxy().getScheduler().runAsync(this, new Runnable() {
             @Override
             public void run() {
-                if (password == null || password.equals(""))
-                    pool = new JedisPool(new JedisPoolConfig(), ip, port, 0);
-                else
-                    pool = new JedisPool(new JedisPoolConfig(), ip, port, 0, password);
+                eeSubscriber = new EESubscriber();
                 Jedis jedis = pool.getResource();
                 try {
-                    jedis.subscribe(new EESubscriber(), BUNGEE_CHANNEL);
+                    jedis.subscribe(eeSubscriber, BUNGEE_CHANNEL, SPECIFIC_CHANNEL);
                 } catch (Exception e) {
                     e.printStackTrace();
                     pool.returnBrokenResource(jedis);
                     getLogger().severe("Unable to connect to Redis server.");
                     return;
                 }
-                pool.returnResource(jedis);            }
+                pool.returnResource(jedis);
+            }
         });
     }
 
@@ -106,6 +120,69 @@ public class ExecuteEverywhere extends Plugin implements Listener {
             e.printStackTrace();
         }
         return resourceFile;
+    }
+
+    public abstract class ECommand extends Command {
+        String name;
+
+        public ECommand(String name, String alias) {
+            super(name, "executeeverywhere.use", alias);
+            this.name = name;
+        }
+
+        @Override
+        public void execute(CommandSender sender, String[] args) {
+            if (args.length < 2 && name.equals("es")) {
+                sender.sendMessage(ChatColor.RED + "Usage: /" + name + " <name> <cmd>");
+                return;
+            }
+            else if (args.length < 1) {
+                sender.sendMessage(ChatColor.RED + "Usage: /" + name + " <cmd>");
+                return;
+            }
+            String cmdString = joiner.join(args);
+            String channel = name;
+            if (cmdString.startsWith("/"))
+                cmdString = cmdString.substring(1);
+            if (channel.equals("es")) {
+                String server = args[0];
+                channel = "es_" + server;
+                cmdString = cmdString.substring(server.length() + 1);
+            }
+            final String finalChannel = channel;
+            final String finalCmdString = cmdString;
+            instance.getProxy().getScheduler().schedule(instance, new Runnable() {
+                @Override
+                public void run() {
+                    Jedis jedis = pool.getResource();
+                    try {
+                        jedis.publish(finalChannel, finalCmdString);
+                    } catch (Exception e) {
+                        pool.returnBrokenResource(jedis);
+                    }
+                    pool.returnResource(jedis);
+                }
+            }, 0, TimeUnit.SECONDS);
+            sender.sendMessage(ChatColor.GREEN + "Sent /" + cmdString + " for execution.");
+        }
+    }
+
+    public class EECommand extends ECommand {
+        public EECommand() {
+            super("ee", "executeeverywhere");
+        }
+    }
+
+    public class EBCommand extends ECommand {
+        public EBCommand() {
+            super("eb", "executebungee");
+        }
+    }
+
+    public class ESCommand extends ECommand {
+        public ESCommand() {
+            super("es", "executespecific");
+        }
     }
 }
 

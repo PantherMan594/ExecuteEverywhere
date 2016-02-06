@@ -20,6 +20,7 @@ public class ExecuteEverywhere extends JavaPlugin implements Listener {
     private static final Joiner joiner = Joiner.on(" ");
     private final String CHANNEL = "ee";
     private final String BUNGEE_CHANNEL = "eb";
+    private String SPECIFIC_CHANNEL = "";
     private static Plugin instance;
     private EESubscriber eeSubscriber;
 
@@ -27,6 +28,7 @@ public class ExecuteEverywhere extends JavaPlugin implements Listener {
     public void onEnable() {
         instance = this;
         saveDefaultConfig();
+        SPECIFIC_CHANNEL = "es_" + (getConfig().getString("name").equals("") ? getServer().getServerName() : getConfig().getString("name"));
         String ip = getConfig().getString("ip");
         int port = getConfig().getInt("port");
         String password = getConfig().getString("password");
@@ -40,7 +42,7 @@ public class ExecuteEverywhere extends JavaPlugin implements Listener {
                 eeSubscriber = new EESubscriber();
                 Jedis jedis = pool.getResource();
                 try {
-                    jedis.subscribe(eeSubscriber, CHANNEL);
+                    jedis.subscribe(eeSubscriber, CHANNEL, SPECIFIC_CHANNEL);
                 } catch (Exception e) {
                     e.printStackTrace();
                     pool.returnBrokenResource(jedis);
@@ -60,23 +62,30 @@ public class ExecuteEverywhere extends JavaPlugin implements Listener {
 
     @Override
     public boolean onCommand(CommandSender sender, final Command cmd, String label, String[] args) {
-        if (args.length == 0) return false;
+        if (args.length < 2 && cmd.getName().equalsIgnoreCase("es")) {
+            sender.sendMessage(ChatColor.RED + "Usage: /" + cmd.getName() + " <name> <cmd>");
+            return true;
+        } else if (args.length < 1) {
+            sender.sendMessage(ChatColor.RED + "Usage: /" + cmd.getName() + " <cmd>");
+            return true;
+        }
         String cmdString = joiner.join(args);
+        String channel = cmd.getName();
         if (cmdString.startsWith("/"))
             cmdString = cmdString.substring(1);
+        if (channel.equals("es")) {
+            String server = args[0];
+            channel = "es_" + server;
+            cmdString = cmdString.substring(server.length() + 1);
+        }
+        final String finalChannel = channel;
         final String finalCmdString = cmdString;
         new BukkitRunnable() {
             @Override
             public void run() {
                 Jedis jedis = pool.getResource();
                 try {
-                    switch (cmd.getName().toLowerCase()) {
-                        case "eb":
-                            jedis.publish(BUNGEE_CHANNEL, finalCmdString);
-                            break;
-                        default:
-                            jedis.publish(CHANNEL, finalCmdString);
-                    }
+                    jedis.publish(finalChannel, finalCmdString);
                 } catch (Exception e) {
                     pool.returnBrokenResource(jedis);
                 }
