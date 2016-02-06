@@ -19,8 +19,6 @@ public class ExecuteEverywhere extends JavaPlugin implements Listener {
     private JedisPool pool;
     private static final Joiner joiner = Joiner.on(" ");
     private final String CHANNEL = "ee";
-    private final String BUNGEE_CHANNEL = "eb";
-    private String SPECIFIC_CHANNEL = "";
     private static Plugin instance;
     private EESubscriber eeSubscriber;
 
@@ -28,7 +26,7 @@ public class ExecuteEverywhere extends JavaPlugin implements Listener {
     public void onEnable() {
         instance = this;
         saveDefaultConfig();
-        SPECIFIC_CHANNEL = "es_" + (getConfig().getString("name").equals("") ? getServer().getServerName() : getConfig().getString("name"));
+        final String specificChannel = "es_" + (getConfig().getString("name").equals("") ? getServer().getServerName() : getConfig().getString("name"));
         String ip = getConfig().getString("ip");
         int port = getConfig().getInt("port");
         String password = getConfig().getString("password");
@@ -42,7 +40,7 @@ public class ExecuteEverywhere extends JavaPlugin implements Listener {
                 eeSubscriber = new EESubscriber();
                 Jedis jedis = pool.getResource();
                 try {
-                    jedis.subscribe(eeSubscriber, CHANNEL, SPECIFIC_CHANNEL);
+                    jedis.subscribe(eeSubscriber, CHANNEL, specificChannel);
                 } catch (Exception e) {
                     e.printStackTrace();
                     pool.returnBrokenResource(jedis);

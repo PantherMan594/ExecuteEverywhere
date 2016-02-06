@@ -22,9 +22,7 @@ import java.util.concurrent.TimeUnit;
 public class ExecuteEverywhere extends Plugin implements Listener {
     private JedisPool pool;
     private static final Joiner joiner = Joiner.on(" ");
-    private final String CHANNEL = "ee";
     private final String BUNGEE_CHANNEL = "eb";
-    private String SPECIFIC_CHANNEL = "";
     private static Plugin instance;
     private EESubscriber eeSubscriber;
 
@@ -42,21 +40,21 @@ public class ExecuteEverywhere extends Plugin implements Listener {
         getProxy().getPluginManager().registerCommand(this, new EECommand());
         getProxy().getPluginManager().registerCommand(this, new EBCommand());
         getProxy().getPluginManager().registerCommand(this, new ESCommand());
-        SPECIFIC_CHANNEL = "es_" + (config.getString("name").equals("") ? getProxy().getName() : config.getString("name"));
+        final String specificChannel = "es_" + (config.getString("name").equals("") ? getProxy().getName() : config.getString("name"));
         final String ip = config.getString("ip");
         final int port = config.getInt("port");
         final String password = config.getString("password");
-        if (password == null || password.equals(""))
-            pool = new JedisPool(new JedisPoolConfig(), ip, port, 0);
-        else
-            pool = new JedisPool(new JedisPoolConfig(), ip, port, 0, password);
         getProxy().getScheduler().runAsync(this, new Runnable() {
             @Override
             public void run() {
+                if (password == null || password.equals(""))
+                    pool = new JedisPool(new JedisPoolConfig(), ip, port, 0);
+                else
+                    pool = new JedisPool(new JedisPoolConfig(), ip, port, 0, password);
                 eeSubscriber = new EESubscriber();
                 Jedis jedis = pool.getResource();
                 try {
-                    jedis.subscribe(eeSubscriber, BUNGEE_CHANNEL, SPECIFIC_CHANNEL);
+                    jedis.subscribe(eeSubscriber, BUNGEE_CHANNEL, specificChannel);
                 } catch (Exception e) {
                     e.printStackTrace();
                     pool.returnBrokenResource(jedis);
